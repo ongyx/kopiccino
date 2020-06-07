@@ -17,8 +17,9 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    py_modules=[],
+    py_modules=["bao.py"],
     python_requires='>=3.7',
     install_requires=[
+        "requests"
     ],
 )
