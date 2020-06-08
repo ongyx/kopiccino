@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="bao",
-    version="0.0.3-alpha",
+    version="0.1.0-alpha",
     author="Ong Yong Xin",
     author_email="ongyongxin.offical@gmail.com",
     description="Placeholder for the bao script manager (WIP)",
@@ -18,8 +18,6 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     py_modules=["bao"],
-    python_requires='>=3.7',
-    install_requires=[
-        "requests"
-    ],
+    python_requires=">=3.7",
+    install_requires=["requests", "userdefaults3",],
 )
