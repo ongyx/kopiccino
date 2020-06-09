@@ -1,11 +1,11 @@
-import setuptools
+from setuptools import setup, find_packages
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-setuptools.setup(
+setup(
     name="bao",
-    version="0.1.0-alpha",
+    version="0.1.1a0",
     author="Ong Yong Xin",
     author_email="ongyongxin.offical@gmail.com",
     description="Placeholder for the bao script manager (WIP)",
@@ -17,7 +17,7 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    py_modules=["bao"],
+    packages=find_packages(exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     python_requires=">=3.7",
     install_requires=["requests", "userdefaults3",],
 )
