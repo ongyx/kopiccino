@@ -12,7 +12,7 @@ import platform
 import plistlib
 
 import userdefaults3
-from bao.exceptions import ConfigError
+from .exceptions import ConfigError
 
 USERHOME = userdefaults3.USERHOME
 _IOS_SYSTEM_BIN = USERHOME / "Documents" / "bin"
@@ -28,9 +28,9 @@ BUNDLE_IDS = {
 BINPATHS = {
     "posix": pathlib.Path("/usr") / "local" / "bin",
     "ios_Pythonista3": _IOS_SYSTEM_BIN,
-    "ios_Pyto": IOS_SYSTEM_BIN,
+    "ios_Pyto": _IOS_SYSTEM_BIN,
     "ios_LibTerm": (USERHOME / "Library" / "bin").resolve(),
-    "ios_ashell": IOS_SYSTEM_BIN,
+    "ios_ashell": _IOS_SYSTEM_BIN,
 }
 
 

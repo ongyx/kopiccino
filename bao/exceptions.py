@@ -1,18 +1,18 @@
 # coding: utf8
-"""Picaro exceptions"""
+"""Bao exceptions"""
 
 
-class PicaroError(Exception):
+class BaoError(Exception):
     pass
 
 
-class PackageError(PicaroError):
+class PackageError(BaoError):
     pass
 
 
-class RepositoryError(PicaroError):
+class RepositoryError(BaoError):
     pass
 
 
-class ConfigError(PicaroError):
+class ConfigError(BaoError):
     pass

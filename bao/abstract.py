@@ -1,16 +1,36 @@
 # coding: utf8
 """Abstract representations of bao packages (buns) and repositories (bakeries).
+
+A bao package is a normal zipfile ('package.zip') plus a metadata file in TOML format
+('package.toml').
+
+The zipfile must at least have a Python script with the same name as the package
+itself ('package.py'). All other Python modules (and folders with __init__.py files)
+are treated as internal modules. Anything else is ignored.
+
+It is recommended that the internal module names start with the package name,
+i.e {PACKAGE_NAME}_tests, to avoid namespace pollution. If the dependency is
+avaliable from Pypi or installable through pip, use the 'pip_requires' key in the
+package metadata instead.
+
+A bao repository is a folder which has one or more buns, with a central index
+('BAKERY.toml') that tells bao about the packages avaliable. The index also stores
+the metadata of all packages in the repository.
+
+On creating a bakery from one or more packages, all .toml files are merged into the
+'BAKERY.toml' file.
 """
 
+import io
 import os
-import toml
 import pathlib
 import shutil
 import tempfile
+import toml
 import zipfile
 
-from bao import utils
-from bao.exceptions import PackageError, RepositoryError
+from . import utils
+from .exceptions import PackageError, RepositoryError
 
 
 class Package(object):
@@ -24,35 +44,30 @@ class Package(object):
         metadata: Package metadata (see https://stackoverflow.com/a/1523456
         for a standard Python header format).
         
-        See help(bao.extract_metadata) for auto-extraction of metadata from
+        See help(bao.utils.autogen_metadata) for auto-extraction of metadata from
         a Python script.
         
-        Mandatory fields:
+        Mandatory fields (all should be a string):
         
-        'name' - name of package
-
-        'author' - people who wrote the code
+        'name' - Name of package
+        
+        'author' - The people who wrote the code
         
         'license' - must be a SPDX ID
-        (see https://github.com/spdx/license-list-data/blob/master/json/licenses.json),
+        (https://github.com/spdx/license-list-data/blob/master/json/licenses.json),
         or else it is treated as a custom license
-        
-        'copyright' - copyright clause
         
         'version' - semantic version of the package
         
         Optional fields:
 
         'doc' - description, recommended
-
-        'maintainer' - commits bugfixes for the package
-
-        'email' - email of maintainer
     
     Attributes:
-        modules (dict): A mapping of module paths to be bundled in the package.
+        modules (list): A list of module paths to be bundled in the package.
         metadata (namedtuple): Metadata of the package.
-        mainscript (str): The main script of the package.
+        mainscript (bytes): The main script of the package. Must be in bytes
+        (so we can ignore encoding).
     
     Raises:
         KeyError: If a required field in the metadata is not specified.
@@ -68,8 +83,8 @@ class Package(object):
         """Bundle a module as a dependency in the package.
         
         Args:
-            path_to_module: The path to the module. Must point to a file or a
-            folder with a __init__.py file.
+            path_to_module: The path to the module. Must point to a file or a folder
+            with a __init__.py file.
         
         Raises:
             PackageError: If a module could not be found at path_to_module.
@@ -82,63 +97,58 @@ class Package(object):
 
         self.modules.append(path_to_module)
 
-    def build(self) -> bytes:
-        """Compile the package (and optionally, the added modules) into a single ZipFile.
+    def build(self, bundle_meta: bool = True) -> bytes:
+        """Compile the package (and optionally, the added modules) into a single
+        ZipFile.
+        
+        Args:
+            bundle_meta: Whether or not to export the package metadata as the ZipFile
+            comment. True by default.
         
         Returns:
-            bytes: the raw bytes of the Zipfile.
+            The bytes of the ZipFile.
         """
 
-        package_name = self.metadata["name"]
-        # we use a temporary directory for shutil use
-        with tempfile.TemporaryDirectory() as dir:
+        script_fname = self.metadata["name"] + ".py"
+        # in-memory zipfile
+        buffer = io.BytesIO(utils.EMPTY_ZIP_FILE)
+        with zipfile.ZipFile(buffer, mode="w") as memzip:
 
-            # copy over modules into directory
-            # TODO: find a more memory-efficient way to bundle modules instead of copying over each one
-            for module_path in self.modules:
-                utils.copypath(module_path, dir)
+            for module in self.modules:
+                if module.is_dir():
+                    utils.zipdir(module, memzip)
+                elif module.is_file():
+                    memzip.write(module)
 
-            # output the main script
-            with open(pathlib.Path(dir) / package_name + ".py", mode="w") as f:
-                f.write(self.mainscript)
+            # Write main script
+            memzip.writestr(script_fname, self.mainscript)
 
-            # zip the temporary directory contents into yet another temporary file
-            with tempfile.NamedTemporaryFile() as file:
-                zip_path = shutil.make_archive(file.name, "zip", root_dir=dir)
+            if bundle_meta:
+                memzip.comment = bytes(toml.dumps(self.metadata), encoding="utf8")
 
-        # write metadata to zipfile as a comment
-        with zipfile.ZipFile(zip_path, mode="a") as z:
-            z.comment = toml.dumps(self.metadata)
-
-        try:
-            with open(zip_path, mode="rb") as f:
-                return f.read()
-
-        finally:
-            # remove the temporary zipfile
-            os.remove(zip_path)
+        return buffer.getbuffer()
 
 
 class Repository(object):
     """A repository (bakery) for storing bao packages.
     
-    A repository is a folder containing a zipfile for each package
-    (bundled with its metadata as a comment).
-    A special file called '.bakery.toml' contains metadata of all packages in the
+    A repository is a folder containing a zipfile for each package.
+    A special file called 'BAKERY.toml' contains metadata of all packages in the
     repository.
     
     Args:
         name: The nickname of the repository.
     
     Attributes:
-        name: The repo name.
-        packages: List of packages that the repo has.
+        name (str): The repo name.
+        packages (dict): Map of packages in the repository to Package objects.
+        metadata (readonly): Metadata of all packages in the repository.
     
     """
 
     def __init__(self, name: str):
         self.name = name
-        self.packages = []
+        self.packages = {}
 
     def add_package(self, package: Package) -> None:
         """Add a package to the repository.
@@ -150,8 +160,32 @@ class Repository(object):
         if not isinstance(package, Package):
             raise RepositoryError("package must be a subclass of bao.abstract.Package")
 
-        else:
-            self.packages.append(package)
+        self.packages[package.metadata[name]] = package
+
+    def del_package(self, package: str) -> None:
+        """Remove a package from the repository.
+        
+        Args:
+            package: The package to remove.
+        """
+
+        del self.packages[package]
+
+    @property
+    def metadata(self) -> dict:
+        """Get metadata from all packages in the repository.
+        
+        Returns:
+            The metadata.
+        """
+
+        meta = {}
+        for pname, pobj in self.packages.items():
+            meta[pname] = pobj.metadata
+            # avoid duplication of "name" metadata
+            del metadata[pname]["name"]
+
+        return meta
 
     def build(self, path: str) -> None:
         """Compile a repository into a folder.
@@ -166,17 +200,13 @@ class Repository(object):
             PermissionError/IOError, if the folder is inaccessible.
         """
 
-        metadata = {
-            "reponame": self.name,
-            "packages": [p.metadata for p in self.packages],
-        }
+        metadata = {"nickname": self.name, "packages": self.metadata}
 
         # Output metadata
-        with open(".bakery.toml", mode="w") as f:
+        with open("BAKERY.toml", mode="w") as f:
             toml.dump(metadata, f, indent=4)
 
         for package in self.packages:
-            output_path = pathlib.Path(path) / package.name + ".zip"
-
-            with open(output_path, mode="wb") as f:
+            path = pathlib.Path(path) / package.metadata["name"] + ".zip"
+            with path.open(mode="wb") as f:
                 f.write(package.build())

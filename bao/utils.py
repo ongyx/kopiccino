@@ -1,22 +1,31 @@
 # coding: utf8
 """Helper functions, utilites, etc."""
 
-import importlib
+import ast
+import os
 import shutil
 import sys
+import pathlib
+import re
+import zipfile
 
-from picaro.exceptions import PicaroError
+from .exceptions import BaoError
 
 PACKAGE_ATTRIBUTES = {
     "name": None,
     "author": None,
     "license": None,
-    "copyright": None,
+    "copyright": "",
     "version": None,
     "doc": "",
     "maintainer": "",
     "email": "",
+    "pip_requires": [],
 }
+
+# String parsing from https://stackoverflow.com/a/19675957
+RE_META_ATTR = re.compile(r"\_\_([a-z]+)\_\_ *= *['\"](.*?)['\"]")
+EMPTY_ZIP_FILE = b"PK\x05\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 
 
 def _fill_defaults(data: dict, defaults: dict):
@@ -36,32 +45,6 @@ def _fill_defaults(data: dict, defaults: dict):
                 data[key] = value
             else:
                 raise KeyError(f"field required: {key}")
-
-
-def valid_module_path(path: str) -> bool:
-    """Check if a path points to a vaild Python module
-    (a .py file, or a directory with a __init__ file).
-    The path must already exist in the filesystem.
-    
-    Args:
-        path: The path to be checked.
-    
-    Returns:
-        True if the path is a valid module, otherwise False.
-    """
-
-    path = pathlib.Path(path)
-
-    if path.is_file() and path.name.endswith(".py"):
-        # A python script
-        return True
-
-    else:
-        initpath = path / "__init__.py"
-        if path.is_dir() and initpath.is_file():
-            return True
-
-    return False
 
 
 def copypath(src: str, dst: str) -> None:
@@ -88,47 +71,92 @@ def copypath(src: str, dst: str) -> None:
         raise shutil.Error("src is not a file or dir")
 
 
-def autogen_metadata(module, module_path: str = None) -> dict:
-    """Generate metadata for a Picaro package from a module.
+def valid_module_path(pth: pathlib.Path) -> bool:
+    """Check if a path to a Python module is valid (either ends with ".py",
+    or is a folder with a __init__.py file).
+    
+    Returns:
+        True if the path exists and is a Python module, False if the path does not
+        exist/is not a valid Python module.
+    """
+    
+    pth = pathlib.Path(pth)
+
+    return (pth.is_file() and pth.suffix == ".py") or (
+        pth.is_dir() and (pth / "__init__.py").is_file()
+    )
+
+
+def autogen_metadata(module_path: str) -> dict:
+    """Generate metadata for a bao package from a Python module (.py file).
+
+    Basically, we find all __{ATTR}__ constants that are defined and return them.
     
     Args:
-        module: The module/script to generate metadata from.
-        module_path (optional): The path to the module, if it is not on sys.path already.
-        Defaults to None.
+        module_path: The path to the module, must be a standalone Python script.
+
+    Raises:
+        SyntaxError, if the module code is invalid.
     
     Returns:
         dict: The metadata generated.
     """
 
     metadata = {}
-    old_sys_path = sys.path
-
-    if module_path is not None:
-        # add to the front of sys.path, because it could be overshadowed
-        sys.path.insert(0, module_path)
+    module_path = pathlib.Path(module_path).resolve().expanduser()
+    metadata["name"] = module_path.stem
 
     try:
-        module = importlib.import_module(module)
+        with module_path.open("r", encoding="utf-8") as f:
+            data = f.read()
 
-    except ModuleNotFoundError:
-        raise PicaroError("module does not exist: " + module)
+    except FileNotFoundError:
+        data = ""
 
-    else:
-        for attribute, default_value in PACKAGE_ATTRIBUTES.items():
-            # header attributes start and end with underscores
-            header_attr = f"__{attribute}__"
+    metadata["docstring"] = ast.get_docstring(ast.parse(data))
 
-            try:
-                metadata[attribute] = getattr(module, header_attr)
+    attrs = [line for line in data.splitlines() if line.startswith("__")]
 
-            except AttributeError:
-                # check if attribute is non-default
-                if default_value is None:
-                    raise ValueError("metadata value not found: " + attribute)
-                else:
-                    metadata[attribute] = default_value
+    for line in attrs:
+        try:
+            attr, attr_data = RE_META_ATTR.findall(line)[0]
 
-    finally:
-        sys.path = old_sys_path
+        except (TypeError, ValueError):
+            continue
+
+        else:
+            metadata[attr] = attr_data
 
     return metadata
+
+
+def zipdir(path: pathlib.Path, zf: zipfile.ZipFile) -> zipfile.ZipFile:
+    """Compress a directory's contents into a ZipFile.
+    
+    Args:
+        path: The path to the directory.
+        zf: The zipfile object to write to.
+    
+    Returns:
+        The zipfile object that was written to.
+    
+    Raises:
+        NotADirectoryError, if the path is not a directory.
+        TypeError, if the zipfile is not a ZipFile object.
+    """
+
+    pth = pathlib.Path(path)
+    if not path.is_dir():
+        raise NotADirectoryError("can't compress path: not a directory")
+
+    if not isinstance(zf, zipfile.ZipFile):
+        raise TypeError("not a zipfile")
+
+    for root, dirs, files in os.walk(pth):
+        for file in files:
+            filepath = pathlib.Path(root) / file
+            relpath = pth.name / filepath.relative_to(pth)
+            print(relpath)
+            zf.write(filepath, arcname=relpath)
+
+    return zf

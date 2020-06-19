@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="bao",
-    version="0.1.1a0",
+    version="0.2.0a0",
     author="Ong Yong Xin",
     author_email="ongyongxin.offical@gmail.com",
     description="Placeholder for the bao script manager (WIP)",
