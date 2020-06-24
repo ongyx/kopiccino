@@ -15,7 +15,11 @@ or just place the files/directories into a folder and let _bao_ do the work for 
 
 ## Installation
 
-WIP
+```
+pip install kopiccino
+```
+
+A bootstrappable version for developemnt based on the latest Github commit is WIP.
 
 ## Packages
 
