@@ -3,15 +3,18 @@ from setuptools import setup, find_packages
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
+with open("requirements.txt", "r", encoding="utf-8") as f:
+    install_requires = f.read().split("\n")
+
 setup(
-    name="bao",
-    version="0.2.0a0",
+    name="kopiccino",
+    version="1.0.0a0",
     author="Ong Yong Xin",
     author_email="ongyongxin.offical@gmail.com",
-    description="Placeholder for the bao script manager (WIP)",
+    description="Script sharing made simple.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/onyxware/bao",
+    url="https://github.com/onyxware/kopiccino",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
@@ -19,5 +22,5 @@ setup(
     ],
     packages=find_packages(exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     python_requires=">=3.7",
-    install_requires=["requests", "userdefaults3",],
+    install_requires=install_requires,
 )

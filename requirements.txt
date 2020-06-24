@@ -1,0 +1,4 @@
+requests>=2.21.0
+toml>=0.10.0
+colorlog>=4.1.0
+userdefaults3>=1.1.6
