@@ -8,7 +8,7 @@ with open("requirements.txt", "r", encoding="utf-8") as f:
 
 setup(
     name="kopiccino",
-    version="1.0.0a0",
+    version="1.0.0a1",
     author="Ong Yong Xin",
     author_email="ongyongxin.offical@gmail.com",
     description="Script sharing made simple.",

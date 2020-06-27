@@ -35,6 +35,8 @@ import zipfile
 from . import utils
 from .exceptions import PackageError, RepositoryError
 
+log = utils.get_logger(__name__)
+
 MANIFEST_FILENAME = "MANIFEST.toml"
 
 
@@ -111,6 +113,7 @@ class Package(object):
                 self.metadata = toml.load(f)
 
         except KeyError:
+            log.info(f"Package has no {MANIFEST_FILENAME}, fallback to external metadata passed...")
             self.metadata = metadata
             utils._fill_defaults(self.metadata, utils.PACKAGE_ATTRIBUTES)
             # automatically generated attributes
@@ -121,16 +124,19 @@ class Package(object):
                 f"could not parse package manifest: {e} (Is your MANIFEST.toml corrupted?"
             )
 
+        mainscript = self.name + ".py"
         try:
             if override_existing:
                 raise KeyError
 
-            mainscript = self.name + ".py"
             with zipfile.ZipFile(self.buffer).open(mainscript) as f:
                 self.mainscript = f.read()
 
         except KeyError:
+            log.info(f"Package has no {mainscript}, fallback to external mainscript passed...")
             self.mainscript = mainscript
+        
+        log.debug(f"Finished initialising package '{self.name}'.")
 
     @property
     def name(self):
@@ -180,6 +186,8 @@ class Package(object):
                     utils.zipdir(module, memzip)
                 elif module.is_file():
                     memzip.write(module, arcname=module.name)
+                
+                log.info(f"Added module {module} to package data.")
 
             self.unbundled = []
 
@@ -187,11 +195,13 @@ class Package(object):
             memzip.writestr(mainscript, self.mainscript)
 
             if bundle_meta:
+                log.debug("Bundling metadata...")
                 memzip.writestr(
                     MANIFEST_FILENAME,
                     utils.TOML_CONF_HEADER + toml.dumps(self.metadata),
                 )
 
+        log.info(f"SUCCESS: built package {self.name}.")
         return self.buffer.getbuffer()
 
 
@@ -217,14 +227,17 @@ def get_online_package(
     """
 
     try:
+        log.info(f"Downloading package from {url}...")
         data, response = utils.download_url(url, pbar=cli)
-    except requests.exceptions.Timeout:
+    except requests.exceptions.Timeout as err:
         raise PackageError(
             f"Could not download from {url}:"
             f"Server took too long to respond (>{utils.REQ_TIMEOUT} seconds)."
-        )
-    except requests.exceptions.RequestException as e:
-        raise PackageError(f"Could not download from {url}: {e}")
+        ) from err
+    except requests.exceptions.RequestException as err:
+        raise PackageError(f"Could not download from {url}") from err
+    
+    log.info(f"SUCCESS: Downloaded package from {url}.")
 
     if metadata:
         return Package(metadata=metadata, data=data, override_existing=True), response
@@ -253,6 +266,7 @@ class Repository(object):
     def __init__(self, name: str):
         self.name = name
         self.packages = {}
+        log.debug(f"Finished initalising repository '{self.name}'.")
 
     def add_package(self, package: Package) -> None:
         """Add a package to the repository.
@@ -265,6 +279,7 @@ class Repository(object):
             raise RepositoryError("package must be a subclass of kopiccino.abstract.Package")
 
         self.packages[package.name] = package
+        log.info(f"Added package '{package.name}' to repository '{self.name}'.")
 
     def del_package(self, package_name: str) -> None:
         """Remove a package from the repository.
@@ -274,6 +289,7 @@ class Repository(object):
         """
 
         del self.packages[package_name]
+        log.info(f"Removed package '{package_name}' from repository '{self.name}'.")
 
     @property
     def metadata(self) -> list:
@@ -297,8 +313,11 @@ class Repository(object):
         with open(pth / MANIFEST_FILENAME, mode="w") as f:
             f.write(utils.TOML_CONF_HEADER)
             toml.dump(metadata, f)
+        log.info(f"Generated metadata for repository '{self.name}'.")
 
         for package in self.packages:
             package_path = (pathlib.Path(pth) / package.name).with_suffix(".zip")
             with package_path.open(mode="wb") as f:
                 f.write(package.build(bundle_meta=False))
+        
+        log.info(f"Built packages {', '.join([p.name for p in self.packages])} for repository {self.name}.")
